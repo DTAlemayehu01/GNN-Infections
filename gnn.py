@@ -76,6 +76,15 @@ def get_observer_vector(times, observers, n):
         t[node] = time
     return [[t[i]] for i in range(n)]
 
+def get_observer_parent_vector(times, observers, parents, n):
+    t = defaultdict(lambda: [0, -1])
+    times = np.array([times]).flatten()
+    observers = np.array([observers]).flatten()
+    for time, node in zip(times, observers):
+        node_key = node
+        t[node] = [time, parents[node_key]]
+    return [t[i] for i in range(n)]
+
 def get_source_vector(test_src, n):
     return [[(i == test_src)] for i in range(n)]
 
@@ -103,22 +112,26 @@ def create_datum_object(x, y, edge_list, edge_feature_list):
     data.edge_attr = torch.tensor(edge_feature_list, dtype=torch.float32)
     return data
 
-def make_data(srcs, dsts, graph_class, *args, **kwargs):
+def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
     g = graph_class(*args, **kwargs)
     n = len(g.graph.vertices())
     test_src, observers = g.get_source_observer_pairs(srcs, dsts, **kwargs)
     times = g.simulation_trial(test_src, observers, iters=1, fixed_graph=True)
-    x = get_observer_vector(times, observers, n)
+    x = None
+    if extra_features:
+        x = get_observer_parent_vector(times, observers, g.graph._parent, n)
+    else:
+        x = get_observer_vector(times, observers, n)
     y = get_source_vector(test_src, n)
     edge_list, edge_feature_list = get_edge_features(g)
     return create_datum_object(x, y, edge_list, edge_feature_list)
 
 dataset = []
 observers = 2 # or 1
-graph_type = Generators.CircleIIDExpGraph
-# graph_type = Generators.LineIIDExpGraph
-observer_constraint = fix_arc
-# observer_constraint = force_end_points
+# graph_type = Generators.CircleIIDExpGraph
+graph_type = Generators.LineIIDExpGraph
+# observer_constraint = fix_arc
+observer_constraint = force_end_points
 graph_size = 20
 iters = 100
 
@@ -126,16 +139,17 @@ end_points = True
 break_symmetry = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, observer_constraints=observer_constraint)
+    x = make_data(1, observers, graph_type, graph_size, extra_features=True, observer_constraints=observer_constraint)
     dataset.append(x)
 
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 class GCN(torch.nn.Module):
     def __init__(self):
         super().__init__()
         torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(1, 16)
+        self.conv1 = gnn.GCNConv(num_features, 16)
         self.conv2 = gnn.GCNConv(16, 16)
-        self.conv3 = gnn.GCNConv(16, 1)
+        self.conv3 = gnn.GCNConv(16, num_predictions)
 
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
@@ -174,10 +188,10 @@ def test(model, dataset):
                 data.x, data.edge_index, data.edge_attr.squeeze()
           )
           preds = torch.sigmoid(out)
-          print(f"Data:{data.x.flatten()}")
-          print(f"Probabilities:{preds.flatten().data}")
+          print(f"Data: {data.x[:,:1].flatten()}")
+          print(f"Prob: {preds.flatten().data}")
           preds = (preds > 0.5).float()
-          print(f"Preds:{preds.flatten().data}")
+          print(f"Pred:{preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())
       preds = torch.cat(all_preds)
