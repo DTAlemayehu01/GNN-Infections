@@ -1,0 +1,332 @@
+#+title: Gnn
+#+PROPERTY: header-args:python  :session py :python ./.venv/bin/python
+
+* Meta (install extra packages)
+#+begin_src shell :results silent
+source ./.venv/bin/activate
+pip install poetry
+pip install torch_geometric
+
+cd ../infection_propagation
+poetry install
+cd ../neural-net-research
+#+end_src
+
+#+begin_src shell
+pwd
+#+end_src
+
+#+RESULTS:
+: /home/danny/cuboulder/in-progress/research-lladser/neural-net-research
+
+* Imports 
+** Personal Infection Library
+#+begin_src python :tangle gnn.py
+import importlib
+from infection_propagation import Graph
+from infection_propagation import Figures
+from infection_propagation import Generators
+
+importlib.reload(Graph)
+importlib.reload(Figures)
+importlib.reload(Generators)
+#+end_src
+
+#+RESULTS:
+: <module 'infection_propagation.Generators' from '/home/danny/cuboulder/in-progress/research-lladser/infection_propagation/src/infection_propagation/Generators.py'>
+
+** Generic Imports
+#+begin_src python :tangle gnn.py
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats as dists
+import scipy.spatial as sp
+import networkx as nx
+import pandas as pd
+
+from itertools import product, combinations
+from collections import defaultdict
+import random
+import json
+import time
+import random    
+#+end_src
+
+#+RESULTS:
+: None
+
+** Neural Network Libraries
+#+begin_src python :tangle gnn.py
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import TensorDataset # DataLoader, TensorDataset
+
+import torch_geometric.nn as gnn
+import torch_geometric.data as gnn_data
+import torch_geometric.utils as gnn_utils
+from torch_geometric.loader import DataLoader
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+#+end_src
+
+#+RESULTS:
+: None
+* Dataset Creation Functions
+** Get our source observers
+** Our individual functions to obtain relevant vectors
+#+begin_src python :tangle gnn.py
+def get_observer_vector(times, observers, n):
+    t = defaultdict(int)
+    times = np.array([times]).flatten()
+    observers = np.array([observers]).flatten()
+    for time, node in zip(times, observers):
+        t[node] = time
+    return [[t[i]] for i in range(n)]
+
+def get_source_vector(test_src, n):
+    return [[(i == test_src)] for i in range(n)]
+
+def get_edge_features(graph):
+    graph.graph.sim_all()
+    
+    gdf = graph.graph._adjency_matrix.stack()
+    edges = gdf[gdf != np.inf].index
+    features = gdf[gdf != np.inf]
+    edge_list = [[],[]]
+    feature_list = []
+    
+    for u, v in edges:
+        edge_list[0].append(u)
+        edge_list[1].append(v)
+        feature_list.append([features[(u,v)]])
+
+    return edge_list, feature_list
+#+end_src
+
+#+RESULTS:
+: None
+
+This is a unit of data in the training set.
+- Note that ~data.edge_index~ has ~dtype=torch.long~ because it doesn't get "mutated by the network" is my best understanding
+#+begin_src python :tangle gnn.py
+def create_datum_object(x, y, edge_list, edge_feature_list):
+    data = gnn_data.Data()
+    data.x = torch.tensor(x, dtype=torch.float32)
+    data.y = torch.tensor(y, dtype=torch.float32)
+    data.edge_index = torch.tensor(edge_list, dtype=torch.long)
+    data.edge_attr = torch.tensor(edge_feature_list, dtype=torch.float32)
+    return data
+#+end_src
+
+#+RESULTS:
+: None
+
+** Constructing Single Data
+note known named arguments go after *args
+#+begin_src python :tangle gnn.py
+def make_data(srcs, dsts, graph_class, *args, **kwargs):
+    g = graph_class(*args, **kwargs)
+    n = len(g.graph.vertices())
+    test_src, observers = g.get_source_observer_pairs(srcs, dsts, **kwargs)
+    times = g.simulation_trial(test_src, observers, iters=1, fixed_graph=True)
+    x = get_observer_vector(times, observers, n)
+    y = get_source_vector(test_src, n)
+    edge_list, edge_feature_list = get_edge_features(g)
+    return create_datum_object(x, y, edge_list, edge_feature_list)
+#+end_src
+
+#+RESULTS:
+: None
+
+** Single Dataset creation example
+#+begin_src python
+x = make_data(1, 2, Generators.CircleIIDExpGraph, 20, end_points=True)
+x.x
+#+end_src
+
+#+RESULTS:
+#+begin_example
+tensor([[0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [6.2366],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [8.5769],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000],
+        [0.0000]])
+#+end_example
+** Full Dataset
+#+begin_src python :tangle gnn.py
+dataset = []
+observers = 2 # or 1
+graph_type = Generators.CircleIIDExpGraph
+graph_size = 20
+iters = 100
+
+end_points = True
+break_symmetry = True
+
+for _ in range(iters):
+    x = make_data(1, observers, graph_type, graph_size, end_points=end_points, break_symmetry=break_symmetry)
+    dataset.append(x)
+#+end_src
+
+#+RESULTS:
+: None
+
+* Model Construction
+Model Architecture:
+1. Layer 1: Graph Convolution
+   - Activation: Sigmoid, extract feature probabilities
+2. Layer 2: Graph Convolution
+   - Activation: Sigmoid, extract feature probabilities
+3. Layer 3: Graph Convolution
+   - Leave Evaluation to External Sigmoid Call
+#+begin_src python :tangle gnn.py
+class GCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        self.conv1 = gnn.GCNConv(1, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
+        self.conv3 = gnn.GCNConv(16, 1)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.sigmoid()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.sigmoid()
+        x = self.conv3(x, edge_index, edge_weight)
+        return x
+#+end_src
+
+#+RESULTS:
+: None
+
+* Training
+** Dataset Partition
+80/20 or 90/10 dataset training partition?
+#+begin_src python :tangle gnn.py
+ratio = 0.8
+n = int(len(dataset)*0.8)
+train_data = DataLoader(dataset[:n], batch_size=10)
+test_data = DataLoader(dataset[n:])
+#+end_src
+
+#+RESULTS:
+: None
+
+** Dataset criteria
+Code Notes:
+- ~lr~ is learning rate, how steep descent is
+- ~.BCEWithLogitsLoss~ is the loss function
+- ~pos_weight = len(y)/sum(y)~ is hard coded rn
+#+begin_src python :tangle gnn.py
+model = GCN()
+
+# pos_weight = torch.tensor([len(y)/sum(y)])
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+#+end_src
+
+#+RESULTS:
+: None
+
+** Training Routine
+~optimizer~ and ~criterion~ sourced from previous block. This is our test iteration
+- ~.zero_grad()~ is a memory optimization while training by setting gradients to ~None~ type
+- ~.backwards()~ computes gradient given loss (vanishing gradients occur here)
+- ~.step()~  updates weights from the gradient calculation
+#+begin_src python :tangle gnn.py
+def train(model, data):
+      optimizer.zero_grad() 
+      out = model(
+            data.x, data.edge_index, data.edge_attr.squeeze()
+      )  
+      loss = criterion(out, data.y)  
+      loss.backward()  
+      optimizer.step() 
+      return loss
+#+end_src
+
+#+RESULTS:
+: None
+
+** Testing Function
+For a circular IID graph, a perfect model should predict \(p(v) = \pm 1/2\) if \(v_{i} \pmod n/2 \equiv v_{j} \pmod n/2\) since that is the absolute most certain a model can get under the case of symmetric observers.
+
+This is our testing loop:
+- We evaluate via a linear classifier where ~>0.5~ is treated as a guess of source (may revaluate how loss is actually calculated)
+#+begin_src python :tangle gnn.py
+def test(model, dataset):
+      all_preds = []
+      all_truths = []
+      for data in dataset:
+          out = model(
+                data.x, data.edge_index, data.edge_attr.squeeze()
+          )
+          preds = torch.sigmoid(out)
+          print(preds.flatten().data)
+          preds = (preds > 0.5).float()
+          # print(preds)
+          all_preds.append(preds.squeeze())
+          all_truths.append(data.y.flatten())
+      preds = torch.cat(all_preds)
+      truths = torch.cat(all_truths)
+
+      tp = ((preds == 1) & (truths == 1)).sum().float()
+      tn = ((preds == 0) & (truths == 0)).sum().float()
+      fp = ((preds == 1) & (truths == 0)).sum().float()
+      fn = ((preds == 0) & (truths == 1)).sum().float()
+
+      accuracy = (tp + tn) / (tp + tn + fp + fn)
+      precision = tp / (tp + fp)
+      recall = tp / (tp + fn)
+      f1 = 2 * precision * recall / (precision + recall)
+      return accuracy, precision, recall, f1
+#+end_src
+
+#+RESULTS:
+: None
+** Model Routine
+Final Training Cycle:
+#+begin_src python :results none :tangle gnn.py
+model.train()
+for epoch in range(1000):
+    epoch_loss = 0
+    print("Individual Losses: ", end="")
+    for data in train_data:
+        loss = train(model, data)
+        epoch_loss = epoch_loss + loss
+        print(f"{loss.item():.4f}", end=", ")
+    print("")
+    print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
+#+end_src
+
+#+RESULTS:
+
+Testing Eval:
+#+begin_src python :tangle gnn.py
+model.eval()
+err = test(model, test_data)
+print(f'Accuracy: {err[0]:.4f}, Precision: {err[1]:.4f}, Recall: {err[2]:.4f}, F1: {err[3]:.4f}')
+#+end_src
+
+#+RESULTS:
+: None
