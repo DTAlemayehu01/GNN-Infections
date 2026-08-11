@@ -191,6 +191,7 @@ def test(model, dataset):
           print(f"Data: {data.x[:,:1].flatten()}")
           print(f"Prob: {preds.flatten().data}")
           preds = (preds > 0.5).float()
+          print(f"True: {data.y.flatten()}")
           print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())

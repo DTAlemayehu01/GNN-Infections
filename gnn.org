@@ -227,7 +227,7 @@ graph_type = Generators.CircleIIDExpGraph
 # graph_type = Generators.LineIIDExpGraph
 observer_constraint = fix_arc
 # observer_constraint = force_end_points
-x = make_data(1, 2, graph_type, 20, extra_features=True, observer_constraints=observer_constraint)
+x = make_data(1, 2, graph_type, 20, extra_features=False, observer_constraints=observer_constraint)
 x.x
 #+end_src
 
@@ -291,6 +291,7 @@ dataset[0].y.shape[1]
 Our activation function was previously a sigmoid but was swapped out for tanh due to its convergence improvements over sigmoid
 - it's less of a victim of the vanishing gradient problem
 - it's output is \([-1,1]\) so still a sort of "probability" intrepretation
+- tanh seems to result in wilder final accuracies
 Future Improvements:
 - Maybe use a dropout layer?
 Model Architecture:
@@ -388,6 +389,7 @@ def test(model, dataset):
           print(f"Data: {data.x[:,:1].flatten()}")
           print(f"Prob: {preds.flatten().data}")
           preds = (preds > 0.5).float()
+          print(f"True: {data.y.flatten()}")
           print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())
