@@ -37,6 +37,37 @@ from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+def fix_arc(graph, observers, arc=0.56):
+    length = graph.n
+    arc_min = int((arc-0.05)*length)
+    arc_max = int((arc+0.05)*length)
+    arc_len = int(random.uniform(arc_min, arc_max)) 
+    while True:
+        new_arc = abs(observers[0] - observers[1])
+        if new_arc != arc_len and new_arc != (length - arc_len):
+            observers = [observers[0], (observers[0] + arc_len)%length]
+            return observers
+        else:
+            return observers
+
+def break_symmetry(graph, observers):
+    length = self.n
+    while True:
+        if abs(observers[0] - observers[1]) == length / 2:
+            observers = graph.sample_nodes(2)
+        else:
+            break
+    return observers
+
+def force_end_points(graph, observers):
+    vertex_end_points = [0, graph.n - 1]
+    return vertex_end_points
+
+def force_end_point(graph, observers):
+    vertex_end_points = [0, graph.n - 1]
+    observers = [random.choice(vertex_end_points)]
+    return observers
+
 def get_observer_vector(times, observers, n):
     t = defaultdict(int)
     times = np.array([times]).flatten()
@@ -84,7 +115,10 @@ def make_data(srcs, dsts, graph_class, *args, **kwargs):
 
 dataset = []
 observers = 2 # or 1
-graph_type = Generators.CircleIIDExpGraph
+# graph_type = Generators.CircleIIDExpGraph
+graph_type = Generators.LineIIDExpGraph
+# observer_constraint = fix_arc
+observer_constraint = force_end_points
 graph_size = 20
 iters = 100
 
@@ -92,7 +126,7 @@ end_points = True
 break_symmetry = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, end_points=end_points, break_symmetry=break_symmetry)
+    x = make_data(1, observers, graph_type, graph_size, observer_constraints=observer_constraint)
     dataset.append(x)
 
 class GCN(torch.nn.Module):
@@ -141,9 +175,10 @@ def test(model, dataset):
                 data.x, data.edge_index, data.edge_attr.squeeze()
           )
           preds = torch.sigmoid(out)
-          print(preds.flatten().data)
+          print(f"Data:{data.x.flatten()}")
+          print(f"Probabilities:{preds.flatten().data}")
           preds = (preds > 0.5).float()
-          # print(preds)
+          print(f"Preds:{preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())
       preds = torch.cat(all_preds)
