@@ -200,6 +200,8 @@ def create_datum_object(x, y, edge_list, edge_feature_list):
 Note: known named arguments go after *args
 - make data, using ~extra_features~ or not
 - ~extra_features~ includes observer infection time and infecting node
+  - infection_time: \(t\) or \(0\)
+  - infecting_node: \(parents[node]\) or \(-1\) (since 0 can be a node for Circle and Line graphs)
 #+begin_src python :tangle gnn.py
 def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
     g = graph_class(*args, **kwargs)
