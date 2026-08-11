@@ -115,10 +115,10 @@ def make_data(srcs, dsts, graph_class, *args, **kwargs):
 
 dataset = []
 observers = 2 # or 1
-# graph_type = Generators.CircleIIDExpGraph
-graph_type = Generators.LineIIDExpGraph
-# observer_constraint = fix_arc
-observer_constraint = force_end_points
+graph_type = Generators.CircleIIDExpGraph
+# graph_type = Generators.LineIIDExpGraph
+observer_constraint = fix_arc
+# observer_constraint = force_end_points
 graph_size = 20
 iters = 100
 
@@ -139,16 +139,15 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
-        x = x.sigmoid()
+        x = x.tanh()
         x = self.conv2(x, edge_index, edge_weight)
-        x = x.sigmoid()
+        x = x.tanh()
         x = self.conv3(x, edge_index, edge_weight)
         return x
 
-ratio = 0.8
-n = int(len(dataset)*0.8)
-train_data = DataLoader(dataset[:n], batch_size=10)
-test_data = DataLoader(dataset[n:])
+train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42)
+train_data = DataLoader(train_data, batch_size=10)
+test_data = DataLoader(test_data)
 
 model = GCN()
 
