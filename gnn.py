@@ -132,14 +132,14 @@ observers = 2 # or 1
 graph_type = Generators.LineIIDExpGraph
 # observer_constraint = fix_arc
 observer_constraint = force_end_points
+more_features=True
 graph_size = 20
 iters = 100
 
 end_points = True
-break_symmetry = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, extra_features=True, observer_constraints=observer_constraint)
+    x = make_data(1, observers, graph_type, graph_size, extra_features=more_features, observer_constraints=observer_constraint)
     dataset.append(x)
 
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -191,7 +191,7 @@ def test(model, dataset):
           print(f"Data: {data.x[:,:1].flatten()}")
           print(f"Prob: {preds.flatten().data}")
           preds = (preds > 0.5).float()
-          print(f"Pred:{preds.flatten().data}")
+          print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())
       preds = torch.cat(all_preds)

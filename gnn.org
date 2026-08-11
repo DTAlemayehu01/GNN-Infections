@@ -197,7 +197,9 @@ def create_datum_object(x, y, edge_list, edge_feature_list):
 : None
 
 ** Constructing Single Data
-note known named arguments go after *args
+Note: known named arguments go after *args
+- make data, using ~extra_features~ or not
+- ~extra_features~ includes observer infection time and infecting node
 #+begin_src python :tangle gnn.py
 def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
     g = graph_class(*args, **kwargs)
@@ -251,6 +253,11 @@ tensor([[ 0.0000, -1.0000],
         [ 3.4455, 18.0000]])
 #+end_example
 ** Full Dataset
+Parameters we set
+- Graph Size and topology (could vary later on)
+- Dataset with or without extra features
+- Additional observer constraints
+- Dataset size
 #+begin_src python :tangle gnn.py
 dataset = []
 observers = 2 # or 1
@@ -258,14 +265,14 @@ observers = 2 # or 1
 graph_type = Generators.LineIIDExpGraph
 # observer_constraint = fix_arc
 observer_constraint = force_end_points
+more_features=True
 graph_size = 20
 iters = 100
 
 end_points = True
-break_symmetry = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, extra_features=True, observer_constraints=observer_constraint)
+    x = make_data(1, observers, graph_type, graph_size, extra_features=more_features, observer_constraints=observer_constraint)
     dataset.append(x)
 #+end_src
 
@@ -279,11 +286,16 @@ dataset[0].y.shape[1]
 #+RESULTS:
 : 1
 * Model Construction
+Our activation function was previously a sigmoid but was swapped out for tanh due to its convergence improvements over sigmoid
+- it's less of a victim of the vanishing gradient problem
+- it's output is \([-1,1]\) so still a sort of "probability" intrepretation
+Future Improvements:
+- Maybe use a dropout layer?
 Model Architecture:
 1. Layer 1: Graph Convolution
-   - Activation: Sigmoid, extract feature probabilities
+   - Activation: tanh, extract feature probabilities
 2. Layer 2: Graph Convolution
-   - Activation: Sigmoid, extract feature probabilities
+   - Activation: tanh, extract feature probabilities
 3. Layer 3: Graph Convolution
    - Leave Evaluation to External Sigmoid Call
 #+begin_src python :tangle gnn.py
@@ -374,7 +386,7 @@ def test(model, dataset):
           print(f"Data: {data.x[:,:1].flatten()}")
           print(f"Prob: {preds.flatten().data}")
           preds = (preds > 0.5).float()
-          print(f"Pred:{preds.flatten().data}")
+          print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())
           all_truths.append(data.y.flatten())
       preds = torch.cat(all_preds)
