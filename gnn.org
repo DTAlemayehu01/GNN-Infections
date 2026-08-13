@@ -301,7 +301,8 @@ Model Architecture:
    - Activation: tanh, extract feature probabilities
 3. Layer 3: Graph Convolution
    - Leave Evaluation to External Sigmoid Call
-#+begin_src python :tangle gnn.py
+#+name: default-class
+#+begin_src python :tangle no
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 class GCN(torch.nn.Module):
     def __init__(self):
@@ -318,10 +319,65 @@ class GCN(torch.nn.Module):
         x = x.tanh()
         x = self.conv3(x, edge_index, edge_weight)
         return x
+
+model = GCN()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #+end_src
 
 #+RESULTS:
 : None
+
+#+name:softmax-class
+#+begin_src python :tangle no
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+class softGCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        self.conv1 = gnn.GCNConv(num_features, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
+        self.conv3 = gnn.GCNConv(16, num_predictions)
+        
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.tanh()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.tanh()
+        x = self.conv3(x, edge_index, edge_weight)
+        x = torch.nn.functional.softmax(x)
+        return x
+
+model = softGCN()
+criterion = torch.nn.BCELoss()
+#+end_src
+
+#+RESULTS:softmax-class
+: None
+
+#+name:gat-class
+#+begin_src python :tangle no
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+class GAT(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        self.conv1 = gnn.GATConv(num_features, 16)
+        self.conv2 = gnn.GATConv(16, 16)
+        self.conv3 = gnn.GATConv(16, num_predictions)
+        
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.tanh()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.tanh()
+        x = self.conv3(x, edge_index, edge_weight)
+        return x
+
+model = GAT()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#+end_src
 
 * Training
 ** Dataset Partition
@@ -339,16 +395,18 @@ test_data = DataLoader(test_data)
 Code Notes:
 - ~lr~ is learning rate, how steep descent is
 - ~.BCEWithLogitsLoss~ is the loss function
-- ~pos_weight = len(y)/sum(y)~ is hard coded rn
+- ~pos_weight = len(y)/sum(y)~ is hard coded rn, adds weight to our source guess
 - ~lr_scheduler.ReduceOnPlateau~ automatically updates our learning rate by a factor of around \(10^{{-1}}^{}\)
   - This occurs if loss doesn't change for ~n=patience~ epochs
-#+begin_src python :tangle gnn.py
-model = GCN()
+#+begin_src python :noweb yes :tangle gnn.py
+#<<default-class>>
+#<<softmax-class>>
+<<gat-class>>
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
-pos_weight = torch.tensor([20/1])
+# pos_weight = torch.tensor([20/1])
+# criterion = torch.nn.BCELoss()
 learning_rate=0.01
-criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 #+end_src
@@ -386,12 +444,12 @@ def test(model, dataset):
       all_preds = []
       all_truths = []
       for data in dataset:
-          out = model(
+          preds = model(
                 data.x, data.edge_index, data.edge_attr.squeeze()
           )
-          preds = torch.sigmoid(out)
+          preds = torch.sigmoid(preds)
           print(f"Data: {data.x[:,:1].flatten()}")
-          print(f"Prob: {preds.flatten().data}")
+          print(f"Conf: {preds.flatten().data}")
           preds = (preds > 0.5).float()
           print(f"True: {data.y.flatten()}")
           print(f"Pred: {preds.flatten().data}")
