@@ -167,8 +167,10 @@ model = GCN()
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
 pos_weight = torch.tensor([20/1])
+learning_rate=0.01
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 
 def train(model, data):
       optimizer.zero_grad() 

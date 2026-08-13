@@ -340,13 +340,17 @@ Code Notes:
 - ~lr~ is learning rate, how steep descent is
 - ~.BCEWithLogitsLoss~ is the loss function
 - ~pos_weight = len(y)/sum(y)~ is hard coded rn
+- ~lr_scheduler.ReduceOnPlateau~ automatically updates our learning rate by a factor of around \(10^{{-1}}^{}\)
+  - This occurs if loss doesn't change for ~n=patience~ epochs
 #+begin_src python :tangle gnn.py
 model = GCN()
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
 pos_weight = torch.tensor([20/1])
+learning_rate=0.01
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 #+end_src
 
 #+RESULTS:
