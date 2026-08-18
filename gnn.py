@@ -133,7 +133,7 @@ def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
     else:
         x = get_observer_vector(times, observers, n)
     y = get_source_vector(test_src, n)
-    edge_list, edge_feature_list = get_edge_features(g, extra_features=False)
+    edge_list, edge_feature_list = get_edge_features(g, extra_features=True)
     return create_datum_object(x, y, edge_list, edge_feature_list)
 
 dataset = []
@@ -177,6 +177,31 @@ test_data = DataLoader(test_data)
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #y_post_processing = False
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+edge_dim = dataset[0].edge_attr.shape[1]
+class GCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        # self.conv1 = gnn.GINEConv(num_features, 16)
+        # self.conv2 = gnn.GINEConv(16, 16)
+        # self.conv3 = gnn.GINEConv(16, num_predictions)
+        self.conv1 = gnn.GINEConv(nn.Sequential(nn.Linear(num_features, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+        self.conv2 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+        self.conv3 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, num_predictions)), edge_dim=edge_dim)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv3(x, edge_index, edge_weight)
+        return x
+
+model = GCN()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class GCN(torch.nn.Module):
 #    def __init__(self):
@@ -200,28 +225,28 @@ test_data = DataLoader(test_data)
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #y_post_processing = False
-num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-class softGCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(num_features, 16)
-        self.conv2 = gnn.GCNConv(16, 16)
-        self.conv3 = gnn.GCNConv(16, num_predictions)
-        
-    def forward(self, x, edge_index, edge_weight):
-        x = self.conv1(x, edge_index, edge_weight)
-        x = x.relu()
-        x = self.conv2(x, edge_index, edge_weight)
-        x = x.relu()
-        x = self.conv3(x, edge_index, edge_weight)
-        # x = gnn_utils.softmax(x, dim=0)
-        return x
-
-model = softGCN()
-pos_weight = torch.tensor([20/1])
-criterion = torch.nn.CrossEntropyLoss()
-y_post_processing = True
+#num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+#class softGCN(torch.nn.Module):
+#    def __init__(self):
+#        super().__init__()
+#        torch.manual_seed(1234)
+#        self.conv1 = gnn.GCNConv(num_features, 16)
+#        self.conv2 = gnn.GCNConv(16, 16)
+#        self.conv3 = gnn.GCNConv(16, num_predictions)
+#        
+#    def forward(self, x, edge_index, edge_weight):
+#        x = self.conv1(x, edge_index, edge_weight)
+#        x = x.relu()
+#        x = self.conv2(x, edge_index, edge_weight)
+#        x = x.relu()
+#        x = self.conv3(x, edge_index, edge_weight)
+#        # x = gnn_utils.softmax(x, dim=0)
+#        return x
+#
+#model = softGCN()
+#pos_weight = torch.tensor([20/1])
+#criterion = torch.nn.CrossEntropyLoss()
+#y_post_processing = True
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class GAT(torch.nn.Module):
 #    def __init__(self):
@@ -275,9 +300,10 @@ def test(model, dataset):
           print(f"Data: {data.x[:,:1].flatten()}")
           if y_post_processing:
                 preds = torch.softmax(preds, dim=0)
+                print(f"Prob: {preds.flatten().data}")
           else:
                 preds = torch.sigmoid(preds)
-          print(f"Conf: {preds.flatten().data}")
+                print(f"Conf: {preds.flatten().data}")
           if y_post_processing:
                 pred = preds.argmax().squeeze()
                 preds = torch.zeros(preds.shape)
