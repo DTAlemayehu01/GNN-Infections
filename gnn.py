@@ -187,11 +187,11 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
-        # x = F.leaky_relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(x)
+        # x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv2(x, edge_index, edge_weight)
-        # x = F.leaky_relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(x)
+        # x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv3(x, edge_index, edge_weight)
         return x
 
