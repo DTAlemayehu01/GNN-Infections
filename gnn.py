@@ -88,7 +88,7 @@ def get_observer_parent_vector(times, observers, parents, n):
 def get_source_vector(test_src, n):
     return [[(i == test_src)] for i in range(n)]
 
-def get_edge_features(graph):
+def get_edge_features(graph, extra_features=False):
     graph.graph.sim_all()
     
     gdf = graph.graph._adjency_matrix.stack()
@@ -100,7 +100,17 @@ def get_edge_features(graph):
     for u, v in edges:
         edge_list[0].append(u)
         edge_list[1].append(v)
-        feature_list.append([features[(u,v)]])
+        feature = [features[(u,v)]]
+        if extra_features:
+            x = np.linspace(0,5,10)
+            y = dists.expon.pdf(x)
+            feature = np.array(feature)
+            feature = np.concat((feature, y))
+            
+        feature_list.append(feature)
+
+    edge_list = np.array(edge_list)
+    feature_list = np.array(feature_list)
 
     return edge_list, feature_list
 
@@ -123,7 +133,7 @@ def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
     else:
         x = get_observer_vector(times, observers, n)
     y = get_source_vector(test_src, n)
-    edge_list, edge_feature_list = get_edge_features(g)
+    edge_list, edge_feature_list = get_edge_features(g, extra_features=False)
     return create_datum_object(x, y, edge_list, edge_feature_list)
 
 dataset = []
@@ -166,6 +176,28 @@ test_data = DataLoader(test_data)
 #model = GCN()
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+class GCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        self.conv1 = gnn.GCNConv(num_features, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
+        self.conv3 = gnn.GCNConv(16, num_predictions)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        # x = F.leaky_relu(x)
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.conv2(x, edge_index, edge_weight)
+        # x = F.leaky_relu(x)
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.conv3(x, edge_index, edge_weight)
+        return x
+
+model = GCN()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class softGCN(torch.nn.Module):
 #    def __init__(self):
@@ -181,31 +213,32 @@ test_data = DataLoader(test_data)
 #        x = self.conv2(x, edge_index, edge_weight)
 #        x = x.tanh()
 #        x = self.conv3(x, edge_index, edge_weight)
-#        x = torch.nn.functional.softmax(x)
-#        return x
+#        x = gnn_utils.softmax(x, dim=0)
+#        return x.squeeze(-1)
 #
 #model = softGCN()
-#criterion = torch.nn.BCELoss()
-num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-class GAT(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(1234)
-        self.conv1 = gnn.GATConv(num_features, 16)
-        self.conv2 = gnn.GATConv(16, 16)
-        self.conv3 = gnn.GATConv(16, num_predictions)
-        
-    def forward(self, x, edge_index, edge_weight):
-        x = self.conv1(x, edge_index, edge_weight)
-        x = x.tanh()
-        x = self.conv2(x, edge_index, edge_weight)
-        x = x.tanh()
-        x = self.conv3(x, edge_index, edge_weight)
-        return x
-
-model = GAT()
-pos_weight = torch.tensor([20/1])
-criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#pos_weight = torch.tensor([20/1])
+#criterion = torch.nn.CrossEntropyLoss()
+#num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+#class GAT(torch.nn.Module):
+#    def __init__(self):
+#        super().__init__()
+#        torch.manual_seed(1234)
+#        self.conv1 = gnn.GATConv(num_features, 16)
+#        self.conv2 = gnn.GATConv(16, 16)
+#        self.conv3 = gnn.GATConv(16, num_predictions)
+#        
+#    def forward(self, x, edge_index, edge_weight):
+#        x = self.conv1(x, edge_index, edge_weight)
+#        x = x.tanh()
+#        x = self.conv2(x, edge_index, edge_weight)
+#        x = x.tanh()
+#        x = self.conv3(x, edge_index, edge_weight)
+#        return x
+#
+#model = GAT()
+#pos_weight = torch.tensor([20/1])
+#criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
 # pos_weight = torch.tensor([20/1])
@@ -217,7 +250,8 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 def train(model, data):
       optimizer.zero_grad() 
       out = model(
-            data.x, data.edge_index, data.edge_attr.squeeze()
+            # data.x, data.edge_index, data.edge_attr.squeeze()
+            data.x, data.edge_index, data.edge_attr.squeeze(-2)
       )  
       loss = criterion(out, data.y)  
       loss.backward()  
@@ -262,7 +296,7 @@ for epoch in range(1000):
         epoch_loss = epoch_loss + loss
         print(f"{loss.item():.4f}", end=", ")
     print("")
-    print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}')
+    print(f'Epoch: {epoch:03d}, Loss: {epoch_loss:.4f}')
 
 model.eval()
 err = test(model, test_data)
