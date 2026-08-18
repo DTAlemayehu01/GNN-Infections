@@ -325,15 +325,16 @@ class GCN(torch.nn.Module):
 
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
-        x = x.tanh()
+        x = x.relu()
         x = self.conv2(x, edge_index, edge_weight)
-        x = x.tanh()
+        x = x.relu()
         x = self.conv3(x, edge_index, edge_weight)
         return x
 
 model = GCN()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+y_post_processing = False
 #+end_src
 
 #+RESULTS:
@@ -363,6 +364,7 @@ class GCN(torch.nn.Module):
 model = GCN()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+y_post_processing = False
 #+end_src
 
 #+name:softmax-class
@@ -378,19 +380,21 @@ class softGCN(torch.nn.Module):
         
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
-        x = x.tanh()
+        x = x.relu()
         x = self.conv2(x, edge_index, edge_weight)
-        x = x.tanh()
+        x = x.relu()
         x = self.conv3(x, edge_index, edge_weight)
-        x = gnn_utils.softmax(x, dim=0)
-        return x.squeeze(-1)
+        # x = gnn_utils.softmax(x, dim=0)
+        return x
 
 model = softGCN()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.CrossEntropyLoss()
+y_post_processing = True
 #+end_src
 
 #+RESULTS:softmax-class
+: None
 
 #+name:gat-class
 #+begin_src python :tangle no
@@ -414,6 +418,7 @@ class GAT(torch.nn.Module):
 model = GAT()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+y_post_processing = False
 #+end_src
 
 * Training
@@ -437,8 +442,8 @@ Code Notes:
   - This occurs if loss doesn't change for ~n=patience~ epochs
 #+begin_src python :noweb yes :tangle gnn.py
 #<<default-class>>
-<<modified-class>>
-#<<softmax-class>>
+#<<modified-class>>
+<<softmax-class>>
 #<<gat-class>>
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
@@ -457,6 +462,7 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 - ~.zero_grad()~ is a memory optimization while training by setting gradients to ~None~ type
 - ~.backwards()~ computes gradient given loss (vanishing gradients occur here)
 - ~.step()~  updates weights from the gradient calculation
+- ~y_post_processing~ is a global var
 #+begin_src python :tangle gnn.py
 def train(model, data):
       optimizer.zero_grad() 
@@ -464,7 +470,10 @@ def train(model, data):
             # data.x, data.edge_index, data.edge_attr.squeeze()
             data.x, data.edge_index, data.edge_attr.squeeze(-2)
       )  
-      loss = criterion(out, data.y)  
+      if y_post_processing:
+            loss = criterion(out.squeeze(-1), data.y.squeeze(-1).argmax())
+      else:
+            loss = criterion(out, data.y)  
       loss.backward()  
       optimizer.step() 
       return loss
@@ -486,10 +495,18 @@ def test(model, dataset):
           preds = model(
                 data.x, data.edge_index, data.edge_attr.squeeze()
           )
-          preds = torch.sigmoid(preds)
           print(f"Data: {data.x[:,:1].flatten()}")
+          if y_post_processing:
+                preds = torch.softmax(preds, dim=0)
+          else:
+                preds = torch.sigmoid(preds)
           print(f"Conf: {preds.flatten().data}")
-          preds = (preds > 0.5).float()
+          if y_post_processing:
+                pred = preds.argmax().squeeze()
+                preds = torch.zeros(preds.shape)
+                preds[pred] = 1
+          else:
+                preds = (preds > 0.5).float()
           print(f"True: {data.y.flatten()}")
           print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())

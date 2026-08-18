@@ -167,58 +167,61 @@ test_data = DataLoader(test_data)
 #
 #    def forward(self, x, edge_index, edge_weight):
 #        x = self.conv1(x, edge_index, edge_weight)
-#        x = x.tanh()
+#        x = x.relu()
 #        x = self.conv2(x, edge_index, edge_weight)
-#        x = x.tanh()
+#        x = x.relu()
 #        x = self.conv3(x, edge_index, edge_weight)
 #        return x
 #
 #model = GCN()
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-class GCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(num_features, 16)
-        self.conv2 = gnn.GCNConv(16, 16)
-        self.conv3 = gnn.GCNConv(16, num_predictions)
-
-    def forward(self, x, edge_index, edge_weight):
-        x = self.conv1(x, edge_index, edge_weight)
-        x = F.relu(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(x, edge_index, edge_weight)
-        x = F.relu(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv3(x, edge_index, edge_weight)
-        return x
-
-model = GCN()
-pos_weight = torch.tensor([20/1])
-criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-#class softGCN(torch.nn.Module):
+#class GCN(torch.nn.Module):
 #    def __init__(self):
 #        super().__init__()
 #        torch.manual_seed(1234)
 #        self.conv1 = gnn.GCNConv(num_features, 16)
 #        self.conv2 = gnn.GCNConv(16, 16)
 #        self.conv3 = gnn.GCNConv(16, num_predictions)
-#        
+#
 #    def forward(self, x, edge_index, edge_weight):
 #        x = self.conv1(x, edge_index, edge_weight)
-#        x = x.tanh()
+#        x = F.relu(x)
+#        # x = F.dropout(x, p=0.5, training=self.training)
 #        x = self.conv2(x, edge_index, edge_weight)
-#        x = x.tanh()
+#        x = F.relu(x)
+#        # x = F.dropout(x, p=0.5, training=self.training)
 #        x = self.conv3(x, edge_index, edge_weight)
-#        x = gnn_utils.softmax(x, dim=0)
-#        return x.squeeze(-1)
+#        return x
 #
-#model = softGCN()
+#model = GCN()
 #pos_weight = torch.tensor([20/1])
-#criterion = torch.nn.CrossEntropyLoss()
+#criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#y_post_processing = False
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+class softGCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        self.conv1 = gnn.GCNConv(num_features, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
+        self.conv3 = gnn.GCNConv(16, num_predictions)
+        
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv3(x, edge_index, edge_weight)
+        # x = gnn_utils.softmax(x, dim=0)
+        return x
+
+model = softGCN()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.CrossEntropyLoss()
+y_post_processing = True
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class GAT(torch.nn.Module):
 #    def __init__(self):
@@ -239,6 +242,7 @@ criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #model = GAT()
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#y_post_processing = False
 
 # pos_weight = torch.tensor([len(y)/sum(y)])
 # pos_weight = torch.tensor([20/1])
@@ -253,7 +257,10 @@ def train(model, data):
             # data.x, data.edge_index, data.edge_attr.squeeze()
             data.x, data.edge_index, data.edge_attr.squeeze(-2)
       )  
-      loss = criterion(out, data.y)  
+      if y_post_processing:
+            loss = criterion(out.squeeze(-1), data.y.squeeze(-1).argmax())
+      else:
+            loss = criterion(out, data.y)  
       loss.backward()  
       optimizer.step() 
       return loss
@@ -265,10 +272,18 @@ def test(model, dataset):
           preds = model(
                 data.x, data.edge_index, data.edge_attr.squeeze()
           )
-          preds = torch.sigmoid(preds)
           print(f"Data: {data.x[:,:1].flatten()}")
+          if y_post_processing:
+                preds = torch.softmax(preds, dim=0)
+          else:
+                preds = torch.sigmoid(preds)
           print(f"Conf: {preds.flatten().data}")
-          preds = (preds > 0.5).float()
+          if y_post_processing:
+                pred = preds.argmax().squeeze()
+                preds = torch.zeros(preds.shape)
+                preds[pred] = 1
+          else:
+                preds = (preds > 0.5).float()
           print(f"True: {data.y.flatten()}")
           print(f"Pred: {preds.flatten().data}")
           all_preds.append(preds.squeeze())
