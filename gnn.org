@@ -148,19 +148,41 @@ def get_observer_vector(times, observers, n):
     observers = np.array([observers]).flatten()
     for time, node in zip(times, observers):
         t[node] = time
-    return [[t[i]] for i in range(n)]
+    return [[t[node]] for node in range(n)]
 
-def get_observer_parent_vector(times, observers, parents, n):
-    t = defaultdict(lambda: [0, -1])
+def get_observer_parent(times, observers, parents, n):
+    t = defaultdict(lambda: [-1])
     times = np.array([times]).flatten()
     observers = np.array([observers]).flatten()
     for time, node in zip(times, observers):
         node_key = node
-        t[node] = [time, parents[node_key]]
-    return [t[i] for i in range(n)]
+        t[node] = parents[node_key]
+    return [[t[node]] for node in range(n)]
+
+# Expecting Single SRC
+def get_line_expected_infection_times(n):
+    exp_time = lambda node, src: abs(node-src)
+    infection_times_feature = []
+    for src in range(n):
+        expected_times = [
+            exp_time(node, src) for node in range(n)
+        ]
+        infection_times_feature.append(expected_times)
+    return infection_times_feature
+
+def get_circle_expected_infection_times(n):
+    exp_time = lambda x: -abs(x - n/2) + n/2
+    infection_times_feature = []
+    for src in range(n):
+        expected_times = [
+            exp_time(src - node) for node in range(n)
+        ]
+        infection_times_feature.append(expected_times)
+    return infection_times_feature
+    
 
 def get_source_vector(test_src, n):
-    return [[(i == test_src)] for i in range(n)]
+    return [[(node == test_src)] for node in range(n)]
 
 def get_edge_features(graph, extra_features=False):
     graph.graph.sim_all()
@@ -176,7 +198,7 @@ def get_edge_features(graph, extra_features=False):
         edge_list[1].append(v)
         feature = [features[(u,v)]]
         if extra_features:
-            x = np.linspace(0,5,10)
+            x = np.linspace(0,2,10)
             y = dists.expon.pdf(x)
             feature = np.array(feature)
             feature = np.concat((feature, y))
@@ -214,18 +236,37 @@ Note: known named arguments go after *args
   - infection_time: \(t\) or \(0\)
   - infecting_node: \(parents[node]\) or \(-1\) (since 0 can be a node for Circle and Line graphs)
 #+begin_src python :tangle gnn.py
-def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
+def make_data(
+        srcs, dsts, graph_class, *args,
+        extra_edge_features=False, parent_node_feature=False,
+        extra_node_features=False, **kwargs
+):
     g = graph_class(*args, **kwargs)
     n = len(g.graph.vertices())
     test_src, observers = g.get_source_observer_pairs(srcs, dsts, **kwargs)
     times = g.simulation_trial(test_src, observers, iters=1, fixed_graph=True)
-    x = None
-    if extra_features:
-        x = get_observer_parent_vector(times, observers, g.graph._parent, n)
-    else:
-        x = get_observer_vector(times, observers, n)
+    x = get_observer_vector(times, observers, n)
+    x = torch.tensor(x, dtype=torch.float32)
+    if parent_node_feature:
+        xp = torch.tensor(
+            get_observer_parent(times, observers, g.graph._parent, n),
+            dtype=torch.float32
+        )
+        x = torch.cat((x, xp), 1)
+    if extra_node_features:
+        if graph_class == Generators.LineIIDExpGraph:
+            xp = torch.tensor(
+                get_line_expected_infection_times(n),
+                dtype=torch.float32
+            )
+        else: # Generators.CircleIIDExpGraph
+            xp = torch.tensor(
+                get_circle_expected_infection_times(n),
+                dtype=torch.float32
+            )
+        x = torch.cat((x, xp), 1)
     y = get_source_vector(test_src, n)
-    edge_list, edge_feature_list = get_edge_features(g, extra_features=True)
+    edge_list, edge_feature_list = get_edge_features(g, extra_features=extra_edge_features)
     return create_datum_object(x, y, edge_list, edge_feature_list)
 #+end_src
 
@@ -234,10 +275,10 @@ def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
 
 ** Single Dataset creation example
 #+begin_src python
-# graph_type = Generators.CircleIIDExpGraph
-graph_type = Generators.LineIIDExpGraph
+graph_type = Generators.CircleIIDExpGraph
+# graph_type = Generators.LineIIDExpGraph
 # observer_constraint = fix_arc
-observer_constraint = force_end_points
+# observer_constraint = force_end_points
 x = make_data(1, 2, graph_type, 20, extra_features=False, observer_constraints=observer_constraint)
 x.x
 #+end_src
@@ -278,14 +319,21 @@ observers = 2 # or 1
 graph_type = Generators.LineIIDExpGraph
 # observer_constraint = fix_arc
 observer_constraint = force_end_points
-more_features=True
+# more_features=False
 graph_size = 20
 iters = 100
 
 end_points = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, extra_features=more_features, observer_constraints=observer_constraint)
+    x = make_data(
+        1, observers, graph_type, graph_size,
+        extra_edge_features=False,
+        parent_node_feature=False,
+        extra_node_features=True,
+        observer_constraints=observer_constraint
+)
+    
     dataset.append(x)
 #+end_src
 
@@ -473,8 +521,8 @@ Code Notes:
 - ~lr_scheduler.ReduceOnPlateau~ automatically updates our learning rate by a factor of around \(10^{{-1}}^{}\)
   - This occurs if loss doesn't change for ~n=patience~ epochs
 #+begin_src python :noweb yes :tangle gnn.py
-#<<default-class>>
-<<edge-vector-class>>
+<<default-class>>
+#<<edge-vector-class>>
 #<<modified-class>>
 #<<softmax-class>>
 #<<gat-class>>

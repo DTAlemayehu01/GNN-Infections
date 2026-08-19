@@ -74,19 +74,41 @@ def get_observer_vector(times, observers, n):
     observers = np.array([observers]).flatten()
     for time, node in zip(times, observers):
         t[node] = time
-    return [[t[i]] for i in range(n)]
+    return [[t[node]] for node in range(n)]
 
-def get_observer_parent_vector(times, observers, parents, n):
-    t = defaultdict(lambda: [0, -1])
+def get_observer_parent(times, observers, parents, n):
+    t = defaultdict(lambda: [-1])
     times = np.array([times]).flatten()
     observers = np.array([observers]).flatten()
     for time, node in zip(times, observers):
         node_key = node
-        t[node] = [time, parents[node_key]]
-    return [t[i] for i in range(n)]
+        t[node] = parents[node_key]
+    return [[t[node]] for node in range(n)]
+
+# Expecting Single SRC
+def get_line_expected_infection_times(n):
+    exp_time = lambda node, src: abs(node-src)
+    infection_times_feature = []
+    for src in range(n):
+        expected_times = [
+            exp_time(node, src) for node in range(n)
+        ]
+        infection_times_feature.append(expected_times)
+    return infection_times_feature
+
+def get_circle_expected_infection_times(n):
+    exp_time = lambda x: -abs(x - n/2) + n/2
+    infection_times_feature = []
+    for src in range(n):
+        expected_times = [
+            exp_time(src - node) for node in range(n)
+        ]
+        infection_times_feature.append(expected_times)
+    return infection_times_feature
+    
 
 def get_source_vector(test_src, n):
-    return [[(i == test_src)] for i in range(n)]
+    return [[(node == test_src)] for node in range(n)]
 
 def get_edge_features(graph, extra_features=False):
     graph.graph.sim_all()
@@ -102,7 +124,7 @@ def get_edge_features(graph, extra_features=False):
         edge_list[1].append(v)
         feature = [features[(u,v)]]
         if extra_features:
-            x = np.linspace(0,5,10)
+            x = np.linspace(0,2,10)
             y = dists.expon.pdf(x)
             feature = np.array(feature)
             feature = np.concat((feature, y))
@@ -122,18 +144,37 @@ def create_datum_object(x, y, edge_list, edge_feature_list):
     data.edge_attr = torch.tensor(edge_feature_list, dtype=torch.float32)
     return data
 
-def make_data(srcs, dsts, graph_class, *args, extra_features=False, **kwargs):
+def make_data(
+        srcs, dsts, graph_class, *args,
+        extra_edge_features=False, parent_node_feature=False,
+        extra_node_features=False, **kwargs
+):
     g = graph_class(*args, **kwargs)
     n = len(g.graph.vertices())
     test_src, observers = g.get_source_observer_pairs(srcs, dsts, **kwargs)
     times = g.simulation_trial(test_src, observers, iters=1, fixed_graph=True)
-    x = None
-    if extra_features:
-        x = get_observer_parent_vector(times, observers, g.graph._parent, n)
-    else:
-        x = get_observer_vector(times, observers, n)
+    x = get_observer_vector(times, observers, n)
+    x = torch.tensor(x, dtype=torch.float32)
+    if parent_node_feature:
+        xp = torch.tensor(
+            get_observer_parent(times, observers, g.graph._parent, n),
+            dtype=torch.float32
+        )
+        x = torch.cat((x, xp), 1)
+    if extra_node_features:
+        if graph_class == Generators.LineIIDExpGraph:
+            xp = torch.tensor(
+                get_line_expected_infection_times(n),
+                dtype=torch.float32
+            )
+        else: # Generators.CircleIIDExpGraph
+            xp = torch.tensor(
+                get_circle_expected_infection_times(n),
+                dtype=torch.float32
+            )
+        x = torch.cat((x, xp), 1)
     y = get_source_vector(test_src, n)
-    edge_list, edge_feature_list = get_edge_features(g, extra_features=True)
+    edge_list, edge_feature_list = get_edge_features(g, extra_features=extra_edge_features)
     return create_datum_object(x, y, edge_list, edge_feature_list)
 
 dataset = []
@@ -142,53 +183,35 @@ observers = 2 # or 1
 graph_type = Generators.LineIIDExpGraph
 # observer_constraint = fix_arc
 observer_constraint = force_end_points
-more_features=True
+# more_features=False
 graph_size = 20
 iters = 100
 
 end_points = True
 
 for _ in range(iters):
-    x = make_data(1, observers, graph_type, graph_size, extra_features=more_features, observer_constraints=observer_constraint)
+    x = make_data(
+        1, observers, graph_type, graph_size,
+        extra_edge_features=False,
+        parent_node_feature=False,
+        extra_node_features=True,
+        observer_constraints=observer_constraint
+)
+    
     dataset.append(x)
 
 train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42)
 train_data = DataLoader(train_data, batch_size=10)
 test_data = DataLoader(test_data)
 
-#num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-#class GCN(torch.nn.Module):
-#    def __init__(self):
-#        super().__init__()
-#        torch.manual_seed(1234)
-#        self.conv1 = gnn.GCNConv(num_features, 16)
-#        self.conv2 = gnn.GCNConv(16, 16)
-#        self.conv3 = gnn.GCNConv(16, num_predictions)
-#
-#    def forward(self, x, edge_index, edge_weight):
-#        x = self.conv1(x, edge_index, edge_weight)
-#        x = x.relu()
-#        x = self.conv2(x, edge_index, edge_weight)
-#        x = x.relu()
-#        x = self.conv3(x, edge_index, edge_weight)
-#        return x
-#
-#model = GCN()
-#pos_weight = torch.tensor([20/1])
-#criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-#y_post_processing = False
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-edge_dim = dataset[0].edge_attr.shape[1]
 class GCN(torch.nn.Module):
     def __init__(self):
         super().__init__()
         torch.manual_seed(1234)
-        # self.conv1 = gnn.GINEConv(num_features, 16)
-        # self.conv2 = gnn.GINEConv(16, 16)
-        # self.conv3 = gnn.GINEConv(16, num_predictions)
-        self.conv1 = gnn.GINEConv(nn.Sequential(nn.Linear(num_features, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
-        self.conv2 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
-        self.conv3 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, num_predictions)), edge_dim=edge_dim)
+        self.conv1 = gnn.GCNConv(num_features, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
+        self.conv3 = gnn.GCNConv(16, num_predictions)
 
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
@@ -202,6 +225,31 @@ model = GCN()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 y_post_processing = False
+#num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+#edge_dim = dataset[0].edge_attr.shape[1]
+#class GCN(torch.nn.Module):
+#    def __init__(self):
+#        super().__init__()
+#        torch.manual_seed(1234)
+#        # self.conv1 = gnn.GINEConv(num_features, 16)
+#        # self.conv2 = gnn.GINEConv(16, 16)
+#        # self.conv3 = gnn.GINEConv(16, num_predictions)
+#        self.conv1 = gnn.GINEConv(nn.Sequential(nn.Linear(num_features, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+#        self.conv2 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+#        self.conv3 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, num_predictions)), edge_dim=edge_dim)
+#
+#    def forward(self, x, edge_index, edge_weight):
+#        x = self.conv1(x, edge_index, edge_weight)
+#        x = x.relu()
+#        x = self.conv2(x, edge_index, edge_weight)
+#        x = x.relu()
+#        x = self.conv3(x, edge_index, edge_weight)
+#        return x
+#
+#model = GCN()
+#pos_weight = torch.tensor([20/1])
+#criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+#y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class GCN(torch.nn.Module):
 #    def __init__(self):
