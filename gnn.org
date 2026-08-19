@@ -156,8 +156,8 @@ def get_observer_parent(times, observers, parents, n):
     observers = np.array([observers]).flatten()
     for time, node in zip(times, observers):
         node_key = node
-        t[node] = parents[node_key]
-    return [[t[node]] for node in range(n)]
+        t[node] = [parents[node_key]]
+    return [t[node] for node in range(n)]
 
 # Expecting Single SRC
 def get_line_expected_infection_times(n):
@@ -328,8 +328,8 @@ end_points = True
 for _ in range(iters):
     x = make_data(
         1, observers, graph_type, graph_size,
-        extra_edge_features=False,
-        parent_node_feature=False,
+        extra_edge_features=True,
+        parent_node_feature=True,
         extra_node_features=True,
         observer_constraints=observer_constraint
 )
@@ -521,8 +521,8 @@ Code Notes:
 - ~lr_scheduler.ReduceOnPlateau~ automatically updates our learning rate by a factor of around \(10^{{-1}}^{}\)
   - This occurs if loss doesn't change for ~n=patience~ epochs
 #+begin_src python :noweb yes :tangle gnn.py
-<<default-class>>
-#<<edge-vector-class>>
+#<<default-class>>
+<<edge-vector-class>>
 #<<modified-class>>
 #<<softmax-class>>
 #<<gat-class>>
