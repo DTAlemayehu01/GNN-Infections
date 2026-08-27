@@ -193,7 +193,7 @@ for _ in range(iters):
     n = random.randint(20, graph_size)
     x = make_data(
         1, observers, graph_type, n,
-        extra_edge_features=False,
+        extra_edge_features=True,
         parent_node_feature=False,
         extra_node_features=False,
         observer_constraints=observer_constraint
@@ -205,39 +205,14 @@ train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42
 train_data = DataLoader(train_data, batch_size=10)
 test_data = DataLoader(test_data)
 
-num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-class GCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(num_features, 16)
-        self.conv2 = gnn.GCNConv(16, 16)
-        self.conv3 = gnn.GCNConv(16, num_predictions)
-
-    def forward(self, x, edge_index, edge_weight):
-        x = self.conv1(x, edge_index, edge_weight)
-        x = x.relu()
-        x = self.conv2(x, edge_index, edge_weight)
-        x = x.relu()
-        x = self.conv3(x, edge_index, edge_weight)
-        return x
-
-model = GCN()
-pos_weight = torch.tensor([20/1])
-criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-#edge_dim = dataset[0].edge_attr.shape[1]
 #class GCN(torch.nn.Module):
 #    def __init__(self):
 #        super().__init__()
 #        torch.manual_seed(1234)
-#        # self.conv1 = gnn.GINEConv(num_features, 16)
-#        # self.conv2 = gnn.GINEConv(16, 16)
-#        # self.conv3 = gnn.GINEConv(16, num_predictions)
-#        self.conv1 = gnn.GINEConv(nn.Sequential(nn.Linear(num_features, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
-#        self.conv2 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
-#        self.conv3 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, num_predictions)), edge_dim=edge_dim)
+#        self.conv1 = gnn.GCNConv(num_features, 16)
+#        self.conv2 = gnn.GCNConv(16, 16)
+#        self.conv3 = gnn.GCNConv(16, num_predictions)
 #
 #    def forward(self, x, edge_index, edge_weight):
 #        x = self.conv1(x, edge_index, edge_weight)
@@ -251,6 +226,31 @@ y_post_processing = False
 #pos_weight = torch.tensor([20/1])
 #criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #y_post_processing = False
+num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
+edge_dim = dataset[0].edge_attr.shape[1]
+class GCN(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        torch.manual_seed(1234)
+        # self.conv1 = gnn.GINEConv(num_features, 16)
+        # self.conv2 = gnn.GINEConv(16, 16)
+        # self.conv3 = gnn.GINEConv(16, num_predictions)
+        self.conv1 = gnn.GINEConv(nn.Sequential(nn.Linear(num_features, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+        self.conv2 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, 16)), edge_dim=edge_dim)
+        self.conv3 = gnn.GINEConv(nn.Sequential(nn.Linear(16, 16), nn.ReLU(), nn.Linear(16, num_predictions)), edge_dim=edge_dim)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.conv1(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv2(x, edge_index, edge_weight)
+        x = x.relu()
+        x = self.conv3(x, edge_index, edge_weight)
+        return x
+
+model = GCN()
+pos_weight = torch.tensor([20/1])
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class GCN(torch.nn.Module):
 #    def __init__(self):
