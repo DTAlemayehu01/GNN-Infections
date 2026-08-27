@@ -138,7 +138,7 @@ def get_edge_features(graph, extra_features=False):
 
 def create_datum_object(x, y, edge_list, edge_feature_list):
     data = gnn_data.Data()
-    data.x = torch.tensor(x, dtype=torch.float32)
+    data.x = x
     data.y = torch.tensor(y, dtype=torch.float32)
     data.edge_index = torch.tensor(edge_list, dtype=torch.long)
     data.edge_attr = torch.tensor(edge_feature_list, dtype=torch.float32)
@@ -195,14 +195,14 @@ for _ in range(iters):
         1, observers, graph_type, n,
         extra_edge_features=False,
         parent_node_feature=False,
-        extra_node_features=True,
+        extra_node_features=False,
         observer_constraints=observer_constraint
 )
     
     dataset.append(x)
 
 train_data, test_data = train_test_split(dataset, test_size=0.2, random_state=42)
-train_data = DataLoader(train_data, batch_size=1)
+train_data = DataLoader(train_data, batch_size=10)
 test_data = DataLoader(test_data)
 
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -210,8 +210,8 @@ class GCN(torch.nn.Module):
     def __init__(self):
         super().__init__()
         torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(num_features, 32)
-        self.conv2 = gnn.GCNConv(32, 16)
+        self.conv1 = gnn.GCNConv(num_features, 16)
+        self.conv2 = gnn.GCNConv(16, 16)
         self.conv3 = gnn.GCNConv(16, num_predictions)
 
     def forward(self, x, edge_index, edge_weight):
@@ -327,10 +327,10 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5)
 
 def train(model, data):
       optimizer.zero_grad() 
-      print(data.x)
-      print(data.y)
-      print(data.edge_attr)
-      print(data)
+      # print(data.x)
+      # print(data.y)
+      # print(data.edge_attr)
+      # print(data)
       out = model(
             data.x, data.edge_index, data.edge_attr.squeeze()
             # data.x, data.edge_index, data.edge_attr.squeeze(-2)
