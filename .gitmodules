@@ -1,0 +1,3 @@
+[submodule "infection_propagation"]
+	path = infection_propagation
+	url = https://github.com/DTAlemayehu01/infection_propagation

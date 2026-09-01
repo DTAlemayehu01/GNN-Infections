@@ -1,6 +1,13 @@
 #+title: Gnn
 #+PROPERTY: header-args:python  :session py :python ./.venv/bin/python
+#+PROPERTY: HEADER-ARGS+ :eval no-export
+#+latex_header: \usepackage[margin=1.0in]{geometry}
+#+latex_header: \usepackage{listings}
+#+latex_header: \lstset{language=,basicstyle=\small\ttfamily, columns=flexible,breaklines=true}
 
+#+begin_export latex
+\clearpage
+#+end_export
 * Meta (install extra packages)
 #+begin_src shell :results silent
 source ./.venv/bin/activate
