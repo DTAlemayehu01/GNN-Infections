@@ -368,6 +368,9 @@ Model Architecture:
    - Activation: tanh, extract feature probabilities
 3. Layer 3: Graph Convolution
    - Leave Evaluation to External Sigmoid Call
+
+** Model 1: GCN Layers
+Traditional Graph Convolutional Network
 #+name: default-class
 #+begin_src python :tangle no
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -382,8 +385,10 @@ class GCN(torch.nn.Module):
     def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight)
         x = x.relu()
+        #x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv2(x, edge_index, edge_weight)
         x = x.relu()
+        #x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv3(x, edge_index, edge_weight)
         return x
 
@@ -395,7 +400,8 @@ y_post_processing = False
 
 #+RESULTS:
 : None
-
+** Model 2: GINE Convolutional Layers for edge feature message pasing
+Considering more edge features than just the edge weight so a randomized weighted laplacian is not enough and a more complex model is needed following GINE
 #+name: edge-vector-class
 #+begin_src python :tangle no
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -427,34 +433,8 @@ y_post_processing = False
 
 #+RESULTS: edge-vector-class
 : None
-
-#+name: modified-class
-#+begin_src python :tangle no
-num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-class GCN(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        torch.manual_seed(1234)
-        self.conv1 = gnn.GCNConv(num_features, 16)
-        self.conv2 = gnn.GCNConv(16, 16)
-        self.conv3 = gnn.GCNConv(16, num_predictions)
-
-    def forward(self, x, edge_index, edge_weight):
-        x = self.conv1(x, edge_index, edge_weight)
-        x = F.relu(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(x, edge_index, edge_weight)
-        x = F.relu(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv3(x, edge_index, edge_weight)
-        return x
-
-model = GCN()
-pos_weight = torch.tensor([20/1])
-criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-y_post_processing = False
-#+end_src
-
+** Model 3: Softmax Model with GCNConv
+Here we hard focus on our true goal of predicting only one source by adding softmax in our post-training outputs
 #+name:softmax-class
 #+begin_src python :tangle no
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -484,6 +464,8 @@ y_post_processing = True
 #+RESULTS:softmax-class
 : None
 
+** Model 4: Graph Attention Network
+Experimenting with alternative node message passing models
 #+name:gat-class
 #+begin_src python :tangle no
 num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
@@ -531,7 +513,6 @@ Code Notes:
 #+begin_src python :noweb yes :tangle gnn.py
 #<<default-class>>
 <<edge-vector-class>>
-#<<modified-class>>
 #<<softmax-class>>
 #<<gat-class>>
 

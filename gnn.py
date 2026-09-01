@@ -217,8 +217,10 @@ test_data = DataLoader(test_data)
 #    def forward(self, x, edge_index, edge_weight):
 #        x = self.conv1(x, edge_index, edge_weight)
 #        x = x.relu()
+#        #x = F.dropout(x, p=0.5, training=self.training)
 #        x = self.conv2(x, edge_index, edge_weight)
 #        x = x.relu()
+#        #x = F.dropout(x, p=0.5, training=self.training)
 #        x = self.conv3(x, edge_index, edge_weight)
 #        return x
 #
@@ -251,29 +253,6 @@ model = GCN()
 pos_weight = torch.tensor([20/1])
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 y_post_processing = False
-#num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
-#class GCN(torch.nn.Module):
-#    def __init__(self):
-#        super().__init__()
-#        torch.manual_seed(1234)
-#        self.conv1 = gnn.GCNConv(num_features, 16)
-#        self.conv2 = gnn.GCNConv(16, 16)
-#        self.conv3 = gnn.GCNConv(16, num_predictions)
-#
-#    def forward(self, x, edge_index, edge_weight):
-#        x = self.conv1(x, edge_index, edge_weight)
-#        x = F.relu(x)
-#        # x = F.dropout(x, p=0.5, training=self.training)
-#        x = self.conv2(x, edge_index, edge_weight)
-#        x = F.relu(x)
-#        # x = F.dropout(x, p=0.5, training=self.training)
-#        x = self.conv3(x, edge_index, edge_weight)
-#        return x
-#
-#model = GCN()
-#pos_weight = torch.tensor([20/1])
-#criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-#y_post_processing = False
 #num_features, num_predictions = dataset[0].x.shape[1], dataset[0].y.shape[1]
 #class softGCN(torch.nn.Module):
 #    def __init__(self):
