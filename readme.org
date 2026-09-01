@@ -1,0 +1,4 @@
+#+title: Readme
+
+Repository of neural network experiments, the best source of truth will be the ~.pdf~ file
+
