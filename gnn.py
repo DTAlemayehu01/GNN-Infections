@@ -60,21 +60,27 @@ def break_symmetry(graph, observers):
     return observers
 
 def force_end_points(graph, observers):
-    vertex_end_points = [0, graph.n - 1]
+    graph = graph.graph.graph
+    vertex_end_points = {
+        x for x in graph.nodes() if graph.degree(x)==1 
+    }
     return vertex_end_points
 
 def force_end_point(graph, observers):
-    vertex_end_points = [0, graph.n - 1]
+    graph = graph.graph.graph
+    vertex_end_points = {
+        x for x in graph.nodes() if graph.degree(x)==1 
+    }
     observers = [random.choice(vertex_end_points)]
     return observers
 
-def get_observer_vector(times, observers, n):
+def get_observer_vector(vertices, times, observers, n):
     t = defaultdict(int)
     times = np.array([times]).flatten()
-    observers = np.array([observers]).flatten()
+    observers = list(observers)
     for time, node in zip(times, observers):
         t[node] = time
-    return [[t[node]] for node in range(n)]
+    return [[t[node]] for node in vertices]
 
 def get_observer_parent(times, observers, parents, n):
     t = defaultdict(lambda: [-1])
@@ -107,29 +113,33 @@ def get_circle_expected_infection_times(n):
     return infection_times_feature
     
 
-def get_source_vector(test_src, n):
-    return [[(node == test_src)] for node in range(n)]
+def get_source_vector(vertices, test_src, n):
+    return [[(node == test_src)] for node in vertices]
 
 def get_edge_features(graph, extra_features=False):
     graph.graph.sim_all()
     
-    gdf = graph.graph._adjency_matrix.stack()
+    gdf = graph.graph.get_adjacency(unweighted=False).stack()
     edges = gdf[gdf != np.inf].index
     features = gdf[gdf != np.inf]
     edge_list = [[],[]]
     feature_list = []
     
-    for u, v in edges:
-        edge_list[0].append(u)
-        edge_list[1].append(v)
-        feature = [features[(u,v)]]
-        if extra_features:
-            x = np.linspace(0,2,10)
-            y = dists.expon.pdf(x)
-            feature = np.array(feature)
-            feature = np.concat((feature, y))
+    vertices_map = graph.graph.enumerated_nodes()
+    for start, end in edges:
+        u = vertices_map[start]
+        v = vertices_map[end]
+        if features[(start,end)] > 0:
+            edge_list[0].append(u)
+            edge_list[1].append(v)
+            feature = [features[(start,end)]]
+            if extra_features:
+                x = np.linspace(0,2,10)
+                y = dists.expon.pdf(x)
+                feature = np.array(feature)
+                feature = np.concat((feature, y))
             
-        feature_list.append(feature)
+            feature_list.append(feature)
 
     edge_list = np.array(edge_list)
     feature_list = np.array(feature_list)
@@ -150,10 +160,11 @@ def make_data(
         extra_node_features=False, **kwargs
 ):
     g = graph_class(*args, **kwargs)
-    n = len(g.graph.vertices())
+    vertices = g.graph.vertices()
+    n = len(vertices)
     test_src, observers = g.get_source_observer_pairs(srcs, dsts, **kwargs)
     times = g.simulation_trial(test_src, observers, iters=1, fixed_graph=True)
-    x = get_observer_vector(times, observers, n)
+    x = get_observer_vector(vertices, times, observers, n)
     x = torch.tensor(x, dtype=torch.float32)
     if parent_node_feature:
         xp = torch.tensor(
@@ -173,8 +184,10 @@ def make_data(
                 dtype=torch.float32
             )
         x = torch.cat((x, xp), 1)
-    y = get_source_vector(test_src, n)
-    edge_list, edge_feature_list = get_edge_features(g, extra_features=extra_edge_features)
+    y = get_source_vector(vertices, test_src, n)
+    edge_list, edge_feature_list = get_edge_features(
+        g, extra_features=extra_edge_features
+    )
     return create_datum_object(x, y, edge_list, edge_feature_list)
 
 dataset = []
